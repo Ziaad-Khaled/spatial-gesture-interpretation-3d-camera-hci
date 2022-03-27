@@ -80,7 +80,7 @@
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="HandMotionData.cs" />
-    <Compile Include="GestureState.cs" />
+    <Compile Include="Gesture.cs" />
     <Compile Include="jointPoint.cs" />
     <Compile Include="MainWindow.xaml.cs">
       <DependentUpon>MainWindow.xaml</DependentUpon>
