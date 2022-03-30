@@ -79,9 +79,9 @@
       <DependentUpon>App.xaml</DependentUpon>
       <SubType>Code</SubType>
     </Compile>
+    <Compile Include="RunningPythonScript.cs" />
     <Compile Include="HandMotionData.cs" />
     <Compile Include="Gesture.cs" />
-    <Compile Include="jointPoint.cs" />
     <Compile Include="MainWindow.xaml.cs">
       <DependentUpon>MainWindow.xaml</DependentUpon>
       <SubType>Code</SubType>

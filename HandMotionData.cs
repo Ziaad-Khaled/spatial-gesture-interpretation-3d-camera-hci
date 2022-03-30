@@ -36,22 +36,56 @@ namespace Microsoft.Samples.Kinect.BodyBasics
         double averageVelocityYLast10Frames = 0;
         double averageVelocityZLast10Frames = 0;
 
-        double averageVelocityMagnitude;
+        double instantVelocityMagnitude;
 
         double sumVelocityXLast10Frames = 0;
         double sumVelocityYLast10Frames = 0;
         double sumVelocityZLast10Frames = 0;
 
+        double instantVelocityZ = 99;
+        double instantVelocityX = 0;
+        double instantVelocityY = 0;
+
         Boolean firstFrameAdded = false;
 
-        public double GetAverageVelocityMagnitude()
+        public double GetInstantVelocityZ()
         {
-            return averageVelocityMagnitude;
+            return instantVelocityZ;
         }
 
-        public void SetAverageVelocityMagnitude(double value)
+        public void SetInstantVelocityZ(double value)
         {
-            averageVelocityMagnitude = value;
+            instantVelocityZ = value;
+        }
+
+        public double GetInstantVelocityX()
+        {
+            return instantVelocityX;
+        }
+
+        public void SetInstantVelocityX(double value)
+        {
+            instantVelocityX = value;
+        }
+
+        public double GetInstantVelocityY()
+        {
+            return instantVelocityY;
+        }
+
+        public void SetInstantVelocityY(double value)
+        {
+            instantVelocityY = value;
+        }
+
+        public double GetInstantVelocityMagnitude()
+        {
+            return instantVelocityMagnitude;
+        }
+
+        public void SetInstantVelocityMagnitude(double value)
+        {
+            instantVelocityMagnitude = value;
         }
 
         public double GetAverageVelocityX()
@@ -72,7 +106,6 @@ namespace Microsoft.Samples.Kinect.BodyBasics
         public void SetAverageVelocityY(double value)
         {
             averageVelocityY = value;
-            computeAverageVelocityMagnitude();
         }
 
         public double GetAverageVelocityZ()
@@ -281,11 +314,12 @@ namespace Microsoft.Samples.Kinect.BodyBasics
             SetAverageVelocityYLast10Frames((GetAverageVelocityYLast10Frames() * last10FramesRatio) + (handPositionY - lastFrameY) / rightHandYLast10Frames.Count);
             SetAverageVelocityZLast10Frames((GetAverageVelocityZLast10Frames() * last10FramesRatio) + (handPositionZ - lastFrameZ) / rightHandZLast10Frames.Count);*/
 
+            computeInstantVelocityMagnitude();
         }
-        public void computeAverageVelocityMagnitude()
+        public void computeInstantVelocityMagnitude()
         {
-            double total = averageVelocityX* averageVelocityX + averageVelocityY* averageVelocityY;
-            averageVelocityMagnitude = Math.Sqrt(total);
+            double total = instantVelocityX* instantVelocityX + instantVelocityY* instantVelocityY;
+            instantVelocityMagnitude = Math.Sqrt(total);
         }
     }
 }

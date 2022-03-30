@@ -138,12 +138,10 @@ namespace Microsoft.Samples.Kinect.BodyBasics
         /// <summary>
         /// Anchors
         /// </summary>
-        private jointPoint leftHandAnchor = new jointPoint();
 
         private Point rightHandAnchor = new Point();
         private double rightHandAnchorZ= 0;
 
-        private jointPoint leftShoulderAnchor = new jointPoint();
         private Point rightShoulderAnchor = new Point();
 
         private double shoulderReference = 0;
@@ -155,10 +153,6 @@ namespace Microsoft.Samples.Kinect.BodyBasics
         private double lastRightHandZ = 0;
         private double lastRightHandX = 0;
         private double lastRightHandY = 0;
-
-        double instantVelocityZ = 99;
-        double instantVelocityX = 0;
-        double instantVelocityY = 0;
 
         double velocityMagnitude = 0;
 
@@ -378,6 +372,9 @@ namespace Microsoft.Samples.Kinect.BodyBasics
                     double leftShoulderX = 0;
                     double leftShoulderZ = 0;
                     double thumbRightY = 0;
+
+                    double spineBaseY = 0;
+                    double headY = 0;
                     int penIndex = 0;
                     foreach (Body body in this.bodies)
                     {
@@ -412,24 +409,7 @@ namespace Microsoft.Samples.Kinect.BodyBasics
 
 
                                 // setting the anchors 
-                                if (jointType.ToString() == "HandLeft")
-                                {
-                                    //Debug.WriteLine("Anchor" + ": X: " + leftHandAnchor.GetX() +" - Y: " + leftHandAnchor.GetY() + "- Z: " + leftHandAnchor.GetZ()) ;
-
-
-                                    if (leftHandAnchor.GetX() == 0.0)
-                                    {
-                                        setNewAnchorPoints(0, depthSpacePoint.X, depthSpacePoint.Y);
-
-                                    }
-                                    else
-                                    {
-                                        distance = distanceBetweenTwoPoints(leftHandAnchor.GetX(), leftHandAnchor.GetY(), depthSpacePoint.X, depthSpacePoint.Y);
-                                        //Debug.WriteLine(distance) ;
-                                        if (Math.Abs(distance) > anchorThreshold)
-                                            setNewAnchorPoints(0, depthSpacePoint.X, depthSpacePoint.Y);
-                                    }
-                                }
+                              
                                 if (jointType.ToString() == "HandRight")
                                 {
                                     handRightZ = position.Z;
@@ -483,6 +463,14 @@ namespace Microsoft.Samples.Kinect.BodyBasics
                                 {
                                     thumbRightY = depthSpacePoint.Y;
                                 }
+                                if (jointType.ToString() == "SpineBase")
+                                {
+                                    spineBaseY = depthSpacePoint.Y;
+                                }
+                                if(jointType.ToString() == "Head")
+                                {
+                                    headY = depthSpacePoint.Y;
+                                }
                             }
 
                             double shoulderReferenceX = rightShoulderX - leftShoulderX;
@@ -501,7 +489,7 @@ namespace Microsoft.Samples.Kinect.BodyBasics
                             handMotionData.AddFrame(handRightX,handRightY,handRightZ);
 
                             if(gesture.GetGesture() == true)
-                                checkGestureType(thumbRightY, handRightX, handRightY, rightShoulderX, rightShoulderY);
+                                checkGestureType(thumbRightY, handRightX, handRightY, rightShoulderX, rightShoulderY, spineBaseY, spineMidY, headY);
 
                             Point point = new Point();
                             String text = "Doing a gesture: " + gesture.GetGesture().ToString();
@@ -527,12 +515,12 @@ namespace Microsoft.Samples.Kinect.BodyBasics
             }
         }
 
-        private void checkGestureType(double thumbRightY, double handRightX, double handRightY, double rightShoulderX, double rightShoulderY)
+        private void checkGestureType(double thumbRightY, double handRightX, double handRightY, double rightShoulderX, double rightShoulderY, double spineBaseY, double spineMidY, double headY)
         {
             Boolean[] gesturesDictionery = gesture.GetGesturesDictonery();
             if(gesturesDictionery[0] == false)
             {
-                checkForSwipeLeft(thumbRightY, handRightY);
+                checkForSwipeLeft(thumbRightY, handRightY, spineBaseY, spineMidY, headY);
             }
             else
             {
@@ -541,7 +529,7 @@ namespace Microsoft.Samples.Kinect.BodyBasics
 
             if (gesturesDictionery[1] == false)
             {
-                checkForSwipeRight(thumbRightY,handRightY);
+                checkForSwipeRight(thumbRightY,handRightY, spineBaseY, spineMidY, headY);
             }
             else
             {
@@ -551,7 +539,7 @@ namespace Microsoft.Samples.Kinect.BodyBasics
             if (gesturesDictionery[2] == false)
             {
                 if (gesture.GetRotationFlag())
-                    checkForRotation(handRightX, handRightY, rightShoulderX, rightShoulderY);
+                    checkForRotation(handRightX, handRightY, rightShoulderX, rightShoulderY, spineBaseY, spineMidY);
             }
             else
             {
@@ -559,7 +547,7 @@ namespace Microsoft.Samples.Kinect.BodyBasics
             }
         }
 
-        private void checkForRotation(double handRightX, double handRightY, double rightShoulderX, double rightShoulderY)
+        private void checkForRotation(double handRightX, double handRightY, double rightShoulderX, double rightShoulderY, double spineBaseY, double spineMidY)
         {
             double radius = calculateRadius(handRightX, handRightY, rightShoulderX, rightShoulderY);
             if(gesture.GetRotationFirstPointX() == -99)
@@ -570,18 +558,30 @@ namespace Microsoft.Samples.Kinect.BodyBasics
 
                 
             }
+            double threshold = (spineBaseY - spineMidY) / 1.5;
+            /*
+             
+            Debug.WriteLine("threshold: " + threshold);
+            Debug.WriteLine("radius: " + radius);
+            Debug.WriteLine("Standard Radius: " + gesture.GetStandardRadius());
+
+            */
+            /*
             Debug.WriteLine("rotationFirstPointX: " + gesture.GetRotationFirstPointX());
             Debug.WriteLine("rotationFirstPointY: " + gesture.GetRotationFirstPointY());
             Debug.WriteLine("standardRadius: " + gesture.GetStandardRadius());
             Debug.WriteLine("handRightX: " + handRightX);
             Debug.WriteLine("handRightY: " + handRightY);
             Debug.WriteLine("radius: " + radius);
+            */
+            
 
-            if (gesture.GetStandardRadius()> radius - 10 || gesture.GetStandardRadius() > radius + 10)
+            if (Math.Abs(radius - gesture.GetStandardRadius()) > threshold)
             {
                 gesture.SetRotationFlag(false);
                 return;
             }
+            
             /*
             Debug.WriteLine("radius: " + radius);
             Debug.WriteLine("instant Velocity X: " + instantVelocityX);
@@ -600,12 +600,14 @@ namespace Microsoft.Samples.Kinect.BodyBasics
             return Math.Sqrt(xSquared + ySquared);
         }
 
-        private void checkForSwipeLeft(double thumbRightY, double handRightY)
+        private void checkForSwipeLeft(double thumbRightY, double handRightY, double spineBaseY, double spineMidY, double headY)
         {
-            if (thumbRightY > handRightY)
+            double reference = (spineBaseY - spineMidY) / 3 + spineMidY;
+            if (thumbRightY > handRightY || handRightY > reference  || handRightY < headY)
                 return;
 
-            if (handMotionData.GetAverageVelocityXLast10Frames() < -5 && handMotionData.GetAverageVelocityYLast10Frames() > -2 && handMotionData.GetAverageVelocityYLast10Frames() < 2)
+
+            if (handMotionData.GetAverageVelocityXLast10Frames() < -5 && handMotionData.GetAverageVelocityYLast10Frames() > -1.5 && handMotionData.GetAverageVelocityYLast10Frames() < 1.5)
             {
                 gesture.AddActiveGesture(0);
             }
@@ -620,10 +622,19 @@ namespace Microsoft.Samples.Kinect.BodyBasics
                 gesture.KillActiveGesture(0);
         }
 
-        private void checkForSwipeRight(double thumbRightY, double handRightY)
+        private void checkForSwipeRight(double thumbRightY, double handRightY, double spineBaseY, double spineMidY, double headY)
         {
             
-            if (thumbRightY < handRightY)
+
+            double reference = (spineBaseY - spineMidY) / 3 + spineMidY;
+
+            Debug.WriteLine("x Velocity: " + handMotionData.GetAverageVelocityXLast10Frames());
+            Debug.WriteLine("y Velocity: " + handMotionData.GetAverageVelocityYLast10Frames());
+            Debug.WriteLine("handRightY: " +handRightY);
+            Debug.WriteLine("reference: " + reference);
+            Debug.WriteLine("spine Mid: " + spineMidY);
+
+            if (thumbRightY < handRightY || handRightY > reference || handRightY < headY)
                 return;
 
             if (handMotionData.GetAverageVelocityXLast10Frames() > 4 && handMotionData.GetAverageVelocityYLast10Frames() > -2 && handMotionData.GetAverageVelocityYLast10Frames() < 2)
@@ -647,14 +658,19 @@ namespace Microsoft.Samples.Kinect.BodyBasics
             // Debug.WriteLine("Velocity " + velocityZ);
             // Debug.WriteLine("lastRightHandZ " + lastRightHandZ);
             updateInstantVelocity(rightHandX, rightHandY, rightHandZ);
-            
-            if ((differenceInZ > 0.2 && instantVelocityZ < 0.03 && instantVelocityZ > -0.03) || handMotionData.GetAverageVelocityMagnitude() > 2)
+
+            if ((differenceInZ > 0.2 && handMotionData.GetInstantVelocityZ() < 0.03 && handMotionData.GetInstantVelocityZ() > -0.03) || handMotionData.GetInstantVelocityMagnitude() > 2)
             {
+                if(gesture.GetGesture() == false)
+                {
+                    gesture.resetCircle();
+                }
                 gesture.SetGesture(true);
-                gesture.resetCircle();
             }
-                
-            if(velocityMagnitude< 1 && velocityMagnitude > -1 && rightHandX < rightShoulderX + 20 && rightHandX > rightShoulderX  && rightHandY > spineMidY)
+
+            Debug.WriteLine("rightHandX: " + rightHandX);
+            Debug.WriteLine("rightShoulderX: " + rightShoulderX);
+            if (velocityMagnitude< 1.5 && velocityMagnitude > -1.5 && rightHandX < rightShoulderX + 40 && rightHandX > rightShoulderX   && rightHandY > spineMidY)
             {
                 gesture.SetGesture(false);
                 gesture.SetRotationFlag(true);
@@ -670,11 +686,11 @@ namespace Microsoft.Samples.Kinect.BodyBasics
         {
             if (lastRightHandZ != 0 || lastRightHandX != 0 || lastRightHandY != 0)
             {
-                instantVelocityX = rightHandX - lastRightHandX;
-                instantVelocityY = rightHandY - lastRightHandY;
-                instantVelocityZ = rightHandZ - lastRightHandZ;
+                handMotionData.SetInstantVelocityX(rightHandX - lastRightHandX);
+                handMotionData.SetInstantVelocityY(rightHandY - lastRightHandY);
+                handMotionData.SetInstantVelocityZ(rightHandZ - lastRightHandZ);
             }
-            velocityMagnitude = Math.Sqrt(instantVelocityX*instantVelocityX + instantVelocityY*instantVelocityY + instantVelocityZ*instantVelocityZ);
+            velocityMagnitude = Math.Sqrt( handMotionData.GetInstantVelocityX() * handMotionData.GetInstantVelocityX() + handMotionData.GetInstantVelocityY() * handMotionData.GetInstantVelocityY() + handMotionData.GetInstantVelocityZ() * handMotionData.GetInstantVelocityZ());
         }
 
         private double distanceBetweenTwoPoints(double v1, double v2, double x, double y)
@@ -688,10 +704,6 @@ namespace Microsoft.Samples.Kinect.BodyBasics
         {
             switch (i)
             {
-                case 0:
-                    leftHandAnchor.SetX(x);
-                    leftHandAnchor.SetY(y);
-                    break;
                 case 1:
                     rightHandAnchor.X = x;
                     rightHandAnchor.Y = y;

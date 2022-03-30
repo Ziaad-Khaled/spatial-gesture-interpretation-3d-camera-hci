@@ -39,6 +39,10 @@ namespace Microsoft.Samples.Kinect.BodyBasics
 
         double standardRadius;
 
+        int swipeLeftNumber;
+        int swipeRightNumber;
+        int rotateNumber;
+
         public double GetStandardRadius()
         {
             return standardRadius;
