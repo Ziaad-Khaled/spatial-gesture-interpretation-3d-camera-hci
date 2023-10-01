@@ -7,16 +7,17 @@
 namespace Microsoft.Samples.Kinect.BodyBasics
 {
     using System;
+    using System.Text;
     using System.Collections;
     using System.Collections.Generic;
     using System.ComponentModel;
-    using System.Diagnostics;
     using System.Globalization;
     using System.IO;
+    using System.Threading.Tasks;
     using System.Windows;
     using System.Windows.Media;
-    using System.Windows.Media.Imaging;
     using Microsoft.Kinect;
+    using Newtonsoft.Json;
 
     /// <summary>
     /// Interaction logic for MainWindow
@@ -150,13 +151,51 @@ namespace Microsoft.Samples.Kinect.BodyBasics
 
         private Gesture gesture = new Gesture();
 
-        private double lastRightHandZ = 0;
-        private double lastRightHandX = 0;
-        private double lastRightHandY = 0;
+        private ColoredGestureImage rightHandColoredImage = new ColoredGestureImage("test", 0);
+
+        private ColoredGestureImage leftHandColoredImage = new ColoredGestureImage("test", 0);
+
+
+        private Point3D lastRightHand = new Point3D(0, 0, 0);
 
         double velocityMagnitude = 0;
 
+        private RightHandMotionData rightHandMotionData = new RightHandMotionData();
+
+        private LeftHandMotionData leftHandMotionData = new LeftHandMotionData();
+
+        //0: rightHand
+        //1: leftHand
+        private Boolean chosenHand = false;
+
+        private Point3D chosenHandLastPoint = new Point3D(0,0,0);
+
         private HandMotionData handMotionData = new HandMotionData();
+
+        private Point[] velocityPoints = new Point[20];
+
+        private string timestamp = DateTime.UtcNow.ToString("ddMMyyyy-HHmmss");
+
+        private string pathToGestures;
+
+        private string pathToSpecificGesture;
+
+        private int gestureCounter = 1;
+
+        private Boolean gestureCounterFlag = false;
+
+        private LinkedList<GestureImage> gestureImages = new LinkedList<GestureImage>();
+
+        private Point3D halfPointMidBase;
+
+        private List<IReadOnlyDictionary<JointType, Joint>> rightHandJoints = new List<IReadOnlyDictionary<JointType, Joint>>();
+
+        private List<Dictionary<JointType, Point>> rightHandJointPoints = new List<Dictionary<JointType, Point>>();
+
+        private List<IReadOnlyDictionary<JointType, Joint>> leftHandJoints = new List<IReadOnlyDictionary<JointType, Joint>>();
+
+        private List<Dictionary<JointType, Point>> leftHandJointPoints = new List<Dictionary<JointType, Point>>();
+
 
 
         /// <summary>
@@ -245,6 +284,68 @@ namespace Microsoft.Samples.Kinect.BodyBasics
 
             // use the window object as the view model in this simple example
             this.DataContext = this;
+
+            //create the folder that contains gestures samples
+            string workingDirectory = Environment.CurrentDirectory;
+            string projectDirectory = Directory.GetParent(workingDirectory).Parent.Parent.FullName;
+            Console.WriteLine(projectDirectory);
+            pathToGestures = projectDirectory + "\\Gestures\\" + timestamp;
+            Directory.CreateDirectory(pathToGestures);
+            Directory.CreateDirectory(pathToGestures + "\\Human Images");
+            Directory.CreateDirectory(pathToGestures + "\\CNN Images");
+
+
+
+            // printing body joints
+
+            List<IReadOnlyDictionary<JointType, Joint>> joints = WritingOnDisk.LoadFile<List<IReadOnlyDictionary<JointType, Joint>>>("C:\\Users\\Ziad\\Bachelor\\thesis-ziad\\Gestures\\18062022-121101\\1\\nucJoints");
+            List<Dictionary<JointType, Point>> jointPoints = WritingOnDisk.LoadFile<List<Dictionary<JointType, Point>>>("C:\\Users\\Ziad\\Bachelor\\thesis-ziad\\Gestures\\18062022-121101\\1\\nucJointPoints");
+            
+            Console.WriteLine(joints.Count);
+            for (int i = 0; i < joints.Count; i++)
+            {
+                foreach (KeyValuePair<JointType, Joint> entry in joints[i])
+                {
+                    Console.WriteLine(entry.Key.ToString() + ":  " + entry.Value.ToString());
+
+                }
+            }
+            Console.WriteLine(jointPoints.Count);
+
+            for (int i = 0; i < jointPoints.Count; i++)
+            {
+                foreach (KeyValuePair<JointType, Point> entry in jointPoints[i])
+                {
+                    Console.WriteLine(entry.Key.ToString() + ":U+0020" + entry.Value.ToString());
+
+                }
+            }
+
+            /*
+               List<Hashtable> n = WritingOnDisk.LoadFile<List<Hashtable>>("C:/Users/Ziad/Bachelor/thesis-ziad/Gestures/132949735972453966/4/nucleus");
+
+               for (int i = 0; i < n.Count; i++)
+               {
+                   if(i == n.Count - 1)
+                       foreach (string key in n[i].Keys)
+                           System.Diagnostics.Debug.WriteLine(String.Format("{0}: {1}", key, n[i][key]));
+
+
+
+                           foreach (string key in n[i].Keys)
+                   {
+                       try
+                       {
+                           System.Diagnostics.Debug.WriteLine(String.Format("{0}: {1}", key, ((Point3D)n[i][key]).ToString()));
+                       }
+                       catch (Exception e)
+                       {
+
+                       }
+
+                   }
+               }
+            */
 
             // initialize the components (controls) of the window
             this.InitializeComponent();
@@ -358,26 +459,63 @@ namespace Microsoft.Samples.Kinect.BodyBasics
                 {
                     // Draw a transparent background to set the render size
                     dc.DrawRectangle(Brushes.Black, null, new Rect(0.0, 0.0, this.displayWidth, this.displayHeight));
-                    double spineMidZ = 0;
-                    double spineMidY = 0;
 
-                    double handRightX = 0;
-                    double handRightY = 0;
-                    double handRightZ = 0;
-
-                    double rightShoulderX = 0;
-                    double rightShoulderY = 0;
-                    double rightShoulderZ = 0;
-
-                    double leftShoulderX = 0;
-                    double leftShoulderZ = 0;
-                    double thumbRightY = 0;
-
-                    double spineBaseY = 0;
-                    double headY = 0;
+                    Hashtable pointsTable = new Hashtable();
                     int penIndex = 0;
+                    Body chosenBody = null;
+                    double chosenBodyZ = 99; ;
                     foreach (Body body in this.bodies)
                     {
+
+                        Pen drawPen = this.bodyColors[penIndex++];
+
+                        if (body.IsTracked)
+                        {
+                            this.DrawClippedEdges(body, dc);
+
+                            IReadOnlyDictionary<JointType, Joint> joints = body.Joints;
+                            double distance;
+                            // convert the joint points to depth (display) space
+                            Dictionary<JointType, Point> jointPoints = new Dictionary<JointType, Point>();
+
+                            foreach (JointType jointType in joints.Keys)
+                            {
+                                // sometimes the depth(Z) of an inferred joint may show as negative
+                                // clamp down to 0.1f to prevent coordinatemapper from returning (-Infinity, -Infinity)
+                                CameraSpacePoint position = joints[jointType].Position;
+
+
+                                if (position.Z < 0)
+                                {
+                                    position.Z = InferredZPositionClamp;
+                                }
+
+                                DepthSpacePoint depthSpacePoint = this.coordinateMapper.MapCameraPointToDepthSpace(position);
+                                jointPoints[jointType] = new Point(depthSpacePoint.X, depthSpacePoint.Y);
+
+                                // setting the anchors 
+
+                                Point3D jointCoordinates = new Point3D(depthSpacePoint.X, depthSpacePoint.Y, position.Z);
+
+                                if(jointType.ToString() == "SpineMid")
+                                {
+                                    if(jointCoordinates.GetZ() < chosenBodyZ)
+                                    {
+                                        chosenBody = body;
+                                    }
+                                }
+                            }
+                           
+                        }
+                    }
+                    penIndex = 0;
+                    foreach (Body body in this.bodies)
+                    {
+                        if (chosenBody != body)
+                        {
+                            continue;
+                        }
+
                         Pen drawPen = this.bodyColors[penIndex++];
 
                         if (body.IsTracked)
@@ -409,10 +547,18 @@ namespace Microsoft.Samples.Kinect.BodyBasics
 
 
                                 // setting the anchors 
-                              
+
+                                Point3D jointCoordinates = new Point3D(depthSpacePoint.X, depthSpacePoint.Y, position.Z);
+                                try
+                                {
+                                    pointsTable.Add(jointType.ToString(), jointCoordinates);
+                                }
+                                catch (Exception ex)
+                                {
+
+                                }
                                 if (jointType.ToString() == "HandRight")
                                 {
-                                    handRightZ = position.Z;
 
                                     if (rightHandAnchor.X == 0.0)
                                     {
@@ -424,8 +570,6 @@ namespace Microsoft.Samples.Kinect.BodyBasics
                                         if (Math.Abs(distance) > anchorThreshold)
                                             setNewAnchorPoints(1, depthSpacePoint.X, depthSpacePoint.Y);
                                     }
-                                    handRightX = depthSpacePoint.X;
-                                    handRightY = depthSpacePoint.Y;
 
                                 }
                                 if (jointType.ToString() == "ShoulderRight")
@@ -440,42 +584,33 @@ namespace Microsoft.Samples.Kinect.BodyBasics
                                         if (Math.Abs(distance) > anchorThreshold)
                                             setNewAnchorPoints(2, depthSpacePoint.X, depthSpacePoint.Y);
                                     }
-                                    rightShoulderX = depthSpacePoint.X;
-                                    rightShoulderY = depthSpacePoint.Y;
                                     //converting to the depth space
                                     //Debug.WriteLine("position Right Shoulder " + position.Z);
-                                    rightShoulderZ = position.Z *1080 / 4;
+                                    jointCoordinates.SetZ(position.Z * 1080 / 4);
                                 }
                                 if (jointType.ToString() == "ShoulderLeft" )
                                 {
-                                   
-                                    leftShoulderX = depthSpacePoint.X;
-                                    //Debug.WriteLine("position left Shoulder " + position.Z);
-
-                                    leftShoulderZ = position.Z * 1080/4;
-                                }
-                                if (jointType.ToString() == "SpineMid")
-                                {
-                                    spineMidZ = position.Z;
-                                    spineMidY = depthSpacePoint.Y;
-                                }
-                                if (jointType.ToString() == "ThumbRight")
-                                {
-                                    thumbRightY = depthSpacePoint.Y;
-                                }
-                                if (jointType.ToString() == "SpineBase")
-                                {
-                                    spineBaseY = depthSpacePoint.Y;
-                                }
-                                if(jointType.ToString() == "Head")
-                                {
-                                    headY = depthSpacePoint.Y;
+                                    jointCoordinates.SetZ(position.Z * 1080 / 4);
                                 }
                             }
 
-                            double shoulderReferenceX = rightShoulderX - leftShoulderX;
-                            double shoulderReferenceZ = rightShoulderZ - leftShoulderZ;
+                            
+
+
+                            double shoulderReferenceX = ((Point3D) pointsTable["ShoulderRight"]).GetX() - ((Point3D)pointsTable["ShoulderLeft"]).GetX();
+                            double shoulderReferenceZ = ((Point3D)pointsTable["ShoulderRight"]).GetZ() - ((Point3D)pointsTable["ShoulderLeft"]).GetZ();
                             shoulderReference = Math.Sqrt(shoulderReferenceX*shoulderReferenceX + shoulderReferenceZ * shoulderReferenceZ);
+                            try
+                            {
+                                pointsTable.Add("Reference", shoulderReference);
+                            }
+                            catch (Exception ex)
+                            {
+
+                            }
+
+                            halfPointMidBase = new Point3D((((Point3D)pointsTable["SpineMid"]).GetX() + ((Point3D)pointsTable["SpineMid"]).GetX()) / 1.6, (((Point3D)pointsTable["SpineMid"]).GetY() + ((Point3D)pointsTable["SpineMid"]).GetY()) / 1.6, (((Point3D)pointsTable["SpineMid"]).GetZ() + ((Point3D)pointsTable["SpineMid"]).GetZ()) / 1.6);
+
 
                             this.DrawBody(joints, jointPoints, dc, drawPen);
 
@@ -483,29 +618,28 @@ namespace Microsoft.Samples.Kinect.BodyBasics
                             this.DrawHand(body.HandRightState, jointPoints[JointType.HandRight], dc);
                            // Debug.WriteLine("Right Hand: " + jointPoints[JointType.HandRight]);
                            // Debug.WriteLine("Right Shoulder: " + rightShoulderAnchor);
-                            this.drawShoulderAnchor(rightShoulderAnchor, dc);
+                    //        this.DrawShoulderAnchor(rightShoulderAnchor, dc);
 
-                            updateGestureState(handRightX, handRightY, handRightZ,spineMidY, spineMidZ, rightShoulderX, rightShoulderY);
-                            handMotionData.AddFrame(handRightX,handRightY,handRightZ);
+                            rightHandMotionData.AddFrame(pointsTable);
+                            leftHandMotionData.AddFrame(pointsTable);
 
-                            if(gesture.GetGesture() == true)
-                                checkGestureType(thumbRightY, handRightX, handRightY, rightShoulderX, rightShoulderY, spineBaseY, spineMidY, headY);
+                            rightHandJoints.Add(joints);
+                            rightHandJointPoints.Add(jointPoints);
 
-                            Point point = new Point();
-                            String text = "Doing a gesture: " + gesture.GetGesture().ToString();
-                            printOnScreen(point, dc, text);
+                            leftHandJoints.Add(joints);
+                            leftHandJointPoints.Add(jointPoints);
 
-                            point.Y = 20;
-                            text = "Swipe Left: " + gesture.GetGesturesDictonery()[0].ToString();
-                            printOnScreen(point, dc, text);
+                            
+                            //  if(gesture.IsThereAGesture() == true)
+                            //      checkGestureType(pointsTable);
+                            UpdateRightHandState(pointsTable);
+                            UpdateLeftHandState(pointsTable);
 
-                            point.Y = 40;
-                            text = "Swipe Right: " + gesture.GetGesturesDictonery()[1].ToString();
-                            printOnScreen(point, dc, text);
 
-                            point.Y = 60;
-                            text = "RotationFlag: " + gesture.GetRotationFlag();
-                            printOnScreen(point, dc, text);
+
+                            Print(dc, drawPen);
+
+                            
                         }
                     }
        
@@ -514,152 +648,436 @@ namespace Microsoft.Samples.Kinect.BodyBasics
                 }
             }
         }
+        
 
-        private void checkGestureType(double thumbRightY, double handRightX, double handRightY, double rightShoulderX, double rightShoulderY, double spineBaseY, double spineMidY, double headY)
+        public void Print(DrawingContext dc, Pen drawPen)
         {
-            Boolean[] gesturesDictionery = gesture.GetGesturesDictonery();
-            if(gesturesDictionery[0] == false)
+            Point point = new Point();
+            String text = "Right hand state: " + gesture.GetRightHandState();
+            PrintOnScreen(point, dc, text);
+
+            point.Y = 20;
+            text = "Left hand state: " + gesture.GetLeftHandState();
+            PrintOnScreen(point, dc, text);
+
+            point.Y = 40;
+            text = "Swipe Right: " + gesture.GetGesturesDictonery()[1].ToString();
+            //    PrintOnScreen(point, dc, text);
+
+            PrintVelocityPoints(dc, drawPen);
+
+            point.X = 340;
+            point.Y = 0;
+
+            text = "Last Made 3 Gestures: ";
+            PrintOnScreen(point, dc, text);
+            point.Y = 60;
+            LinkedList<string>.Enumerator demoEnum = gesture.GetLastMadeGestures().GetEnumerator();
+            while (demoEnum.MoveNext())
             {
-                checkForSwipeLeft(thumbRightY, handRightY, spineBaseY, spineMidY, headY);
+                string res = demoEnum.Current;
+                PrintOnScreen(point, dc, res);
+                point.Y = point.Y - 20;
+            }
+
+            int[] totalNumberOfGestures = gesture.TotalNumberOfGestures;
+
+
+
+            point.X = 430;
+            point.Y = 80;
+
+            point.Y = point.Y + 20;
+            text = "SL: " + totalNumberOfGestures[0];
+            PrintOnScreen(point, dc, text);
+
+            point.Y = point.Y + 20;
+            text = "SR: " + totalNumberOfGestures[1];
+            PrintOnScreen(point, dc, text);
+
+            point.Y = point.Y + 20;
+            text = "Rot: " + totalNumberOfGestures[2];
+            PrintOnScreen(point, dc, text);
+
+            point.Y = point.Y + 20;
+            text = "SU: " + totalNumberOfGestures[3];
+            PrintOnScreen(point, dc, text);
+
+            point.Y = point.Y + 20;
+            text = "SD: " + totalNumberOfGestures[4];
+            PrintOnScreen(point, dc, text);
+
+            point.Y = point.Y + 20;
+            text = "Rect: " + totalNumberOfGestures[5];
+            PrintOnScreen(point, dc, text);
+
+        }
+
+        private void UpdateLeftHandState(Hashtable pointsTable)
+        {
+
+            double differenceInZ = Math.Abs(((Point3D)pointsTable["SpineMid"]).GetZ() - ((Point3D)pointsTable["HandLeft"]).GetZ());
+
+
+
+            if (((leftHandMotionData.inActiveFor30Frames() && ((Point3D)pointsTable["HandLeft"]).GetZ() < ((Point3D)pointsTable["SpineMid"]).GetZ() + 0.8) || Gesture.IsBodyMovingWithTheHand(leftHandMotionData)))
+            {
+                if (gesture.GetLeftHandState().Equals(Gesture.State.Retraction))
+                {
+                    leftHandColoredImage.DrawLines(2, leftHandMotionData.GetPoints(), null, 0);
+
+                    gestureCounterFlag = false;
+
+                    SaveGestureToDisk(pathToSpecificGesture, 0, 2);
+
+                    gestureCounter++;
+                    leftHandMotionData.FlushData();
+                }
+                gesture.SetLeftHandNoGesture();
             }
             else
             {
-               checkIfSwipeLeftHasEnded(thumbRightY, handRightY);
-            }
+                switch (gesture.GetLeftHandState())
+                {
+                    case Gesture.State.NoGesture:
+                        if (gestureCounterFlag == true && leftHandColoredImage.NucleusLinkedList.Count == 0)
+                        {
+                            leftHandColoredImage.DrawLines(2, leftHandMotionData.GetPoints(), null, 0);
 
-            if (gesturesDictionery[1] == false)
+                            gestureCounterFlag = false;
+
+                            SaveGestureToDisk(pathToSpecificGesture, 0, 2);
+
+                            gestureCounter++;
+                            leftHandMotionData.FlushData();
+                            //                    File.WriteAllText(pathToGestures + "/json", gesture.GetLastMadeGesture());
+                            /*
+                            if(PrepareToSaveImages())
+                            {
+                                while(gestureImages.Count > 0)
+                                {
+                                    gestureImages.First.Value.SaveImage();
+                                    gestureImages.RemoveFirst();
+                                }
+                            }
+                            */
+
+                        }
+
+                        Console.WriteLine("instant velocity magnitude before preparation: " + leftHandMotionData.GetInstantVelocityMagnitude());
+                        Console.WriteLine("hand left y : " + ((Point3D)pointsTable["HandLeft"]).GetY());
+                        Console.WriteLine("spine mid y: " + halfPointMidBase.GetY());
+                        if (((Point3D)pointsTable["HandLeft"]).GetY() < halfPointMidBase.GetY() && ((((Point3D)pointsTable["HandLeft"]).GetZ() + 0.1 < ((Point3D)pointsTable["SpineMid"]).GetZ() || ((Point3D)pointsTable["HandLeft"]).GetX() + 100 < ((Point3D)pointsTable["SpineMid"]).GetX() + 100) && leftHandMotionData.GetInstantVelocity().GetZ() < 0 && leftHandMotionData.GetInstantVelocityMagnitude() > 3))
+                        {
+                            pathToSpecificGesture = pathToGestures + "\\" + gestureCounter;
+                            PrepareEnvironmentToSaveGesture(1);
+                        }
+                        break;
+                    case Gesture.State.Preperation:
+
+                        Console.WriteLine("Acceleration: " + leftHandMotionData.GetInstantAccelerationMagnitude());
+                        //      Console.WriteLine("Gesture Image: " + this.gestureImage);
+
+
+                        if (gesture.gestureNucleusIsReady(pointsTable, leftHandMotionData))
+                        {
+                            leftHandColoredImage.DrawLines(0, leftHandMotionData.GetPoints(), null, 0);
+                            SaveGestureToDisk(pathToSpecificGesture, 0, 0);
+
+                            Console.WriteLine("flusshhhhh");
+                            leftHandMotionData.FlushData();
+                            leftHandMotionData.AddFrame(pointsTable);
+                            gesture.SetStateToNucleus(leftHandMotionData.GetPoints().First, 1);
+
+                        }
+
+                        break;
+                    case Gesture.State.Nucleus:
+
+
+                        //I should begin to detect the gesture
+                        gesture.CheckGestureType(pointsTable, leftHandMotionData, pathToSpecificGesture);
+                        //detectGesture()
+
+                        if (gesture.gestureNucleusEnded(pointsTable, leftHandMotionData))
+                        {
+
+                            int closedShape = 0;
+                            if (gesture.MadeGesturesWithinNucleus.Contains("Rotation"))
+                            {
+                                Console.WriteLine("yes containts rotation");
+                                closedShape = 1;
+                            }
+                            if (gesture.MadeGesturesWithinNucleus.Contains("Rectangle"))
+                            {
+                                Console.WriteLine("yes containts rectangle");
+                                closedShape = 2;
+                            }
+
+
+                            leftHandColoredImage.DrawLines(1, leftHandMotionData.GetPoints(), leftHandMotionData.GetAverageLeftHand(), closedShape);
+
+                            Console.WriteLine("preperation linkedlist count: " + leftHandColoredImage.PreperationLinkedList.Count);
+                            Console.WriteLine("nucleus linkedlist count: " + leftHandColoredImage.NucleusLinkedList.Count);
+                            Console.WriteLine("retraction linkedlist count: " + leftHandColoredImage.RetractionLinkedList.Count);
+
+                            gesture.SetStateToRetraction(leftHandColoredImage.NucleusLinkedList, 1);
+
+                            //         List<Hashtable> motionData = handMotionData.GetMotionData();
+                            //         Hashtable gestureType = new Hashtable();
+                            //          gestureType.Add("type", gesture.GetLastMadeGesture());
+                            //         motionData.Add(gestureType);
+                            SaveGestureToDisk(pathToSpecificGesture, 0, 1);
+
+
+                            leftHandMotionData.FlushData();
+
+                        }
+                        break;
+
+                    case Gesture.State.Retraction:
+                        Console.WriteLine("z instant velocity: " + leftHandMotionData.GetInstantVelocity().GetZ());
+                        Console.WriteLine("hand left y : " + ((Point3D)pointsTable["HandLeft"]).GetY());
+                        Console.WriteLine("spine Mid y: " + halfPointMidBase.GetY());
+                        if (((Point3D)pointsTable["HandLeft"]).GetY() < halfPointMidBase.GetY() && ((((Point3D)pointsTable["HandLeft"]).GetZ() + 0.1 < ((Point3D)pointsTable["SpineMid"]).GetZ() || ((Point3D)pointsTable["HandLeft"]).GetX() + 100 < ((Point3D)pointsTable["SpineMid"]).GetX() + 100) && leftHandMotionData.GetInstantVelocity().GetZ() < 0 && leftHandMotionData.GetInstantVelocityMagnitude() > 3))
+                        {
+                            Console.WriteLine("retraaaaaaaaction");
+                            Console.WriteLine("gesture: " + gesture.GetLastMadeGestures().Count);
+
+                            leftHandColoredImage.DrawLines(2, leftHandMotionData.GetPoints(), null, 0);
+
+                            gestureCounterFlag = false;
+                            WritingOnDisk.WriteToFile(pathToGestures + "\\data.txt", gesture.GetLastMadeGesture());
+
+                            SaveGestureToDisk(pathToSpecificGesture, 0, 2);
+
+
+                            gestureCounter++;
+                            leftHandMotionData.FlushData();
+                            //                    File.WriteAllText(pathToGestures + "/json", gesture.GetLastMadeGesture());
+
+
+                            pathToSpecificGesture = pathToGestures + "\\" + gestureCounter;
+                            PrepareEnvironmentToSaveGesture(1);
+
+                        }
+                        break;
+
+                    default:
+                        break;
+                }
+
+            }
+        }
+
+        private void SaveGestureToDisk(string pathToSpecificGesture, int handType, int phase)
+        {
+            switch(handType)
             {
-                checkForSwipeRight(thumbRightY,handRightY, spineBaseY, spineMidY, headY);
+                case 0:
+                    switch(phase)
+                    {
+                        case 0:
+                //            WritingOnDisk.WriteFile(leftHandJoints, pathToSpecificGesture + "/prepJoints");
+             //               WritingOnDisk.WriteFile(leftHandJointPoints, pathToSpecificGesture + "/prepJointPoints");
+                            break;
+                        case 1:
+               //             WritingOnDisk.WriteFile(leftHandJoints, pathToSpecificGesture + "/nucJoints");
+             //               WritingOnDisk.WriteFile(leftHandJointPoints, pathToSpecificGesture + "/nucJointPoints");
+                            break;
+                        case 2:
+              //              WritingOnDisk.WriteFile(leftHandJoints, pathToSpecificGesture + "/retJoints");
+               //             WritingOnDisk.WriteFile(leftHandJointPoints, pathToSpecificGesture + "/retJointPoints");
+                            break;
+                    }
+                    leftHandJoints.Clear();
+                    leftHandJointPoints.Clear();
+                    break;
+                case 1:
+                    switch (phase)
+                    {
+                        case 0:
+               //             WritingOnDisk.WriteFile(rightHandJoints, pathToSpecificGesture + "/prepJoints");
+            //                WritingOnDisk.WriteFile(rightHandJointPoints, pathToSpecificGesture + "/prepJointPoints");
+                            break;
+                        case 1:
+           //                 WritingOnDisk.WriteFile(rightHandJoints, pathToSpecificGesture + "/nucJoints");
+            //                WritingOnDisk.WriteFile(rightHandJointPoints, pathToSpecificGesture + "/nucJointPoints");
+                            break;
+                        case 2:
+           //                 WritingOnDisk.WriteFile(rightHandJoints, pathToSpecificGesture + "/retJoints");
+            //                WritingOnDisk.WriteFile(rightHandJointPoints, pathToSpecificGesture + "/retJointPoints");
+                            break;
+                    }
+                    rightHandJoints.Clear();
+                    rightHandJointPoints.Clear();
+                    break;
+            }
+        }
+
+        private async Task UpdateRightHandState(Hashtable pointsTable)
+        {
+
+  
+
+            double differenceInZ = Math.Abs(((Point3D)pointsTable["SpineMid"]).GetZ() - ((Point3D)pointsTable["HandRight"]).GetZ());
+
+
+  
+            if (((rightHandMotionData.inActiveFor30Frames() && ((Point3D)pointsTable["HandRight"]).GetZ() < ((Point3D)pointsTable["SpineMid"]).GetZ() + 0.8 )|| Gesture.IsBodyMovingWithTheHand(rightHandMotionData)))
+            {
+                if(gesture.GetRightHandState().Equals(Gesture.State.Retraction))
+                {
+                    rightHandColoredImage.DrawLines(2, rightHandMotionData.GetPoints(), null, 0);
+
+                    gestureCounterFlag = false;
+                    SaveGestureToDisk(pathToSpecificGesture, 1, 2);
+
+
+                    gestureCounter++;
+                    rightHandMotionData.FlushData();
+                }
+                gesture.SetRightHandNoGesture();
             }
             else
             {
-                checkIfSwipeRightHasEnded(thumbRightY,handRightY);
+                switch (gesture.GetRightHandState())
+                {
+                    case Gesture.State.NoGesture:
+                        if (gestureCounterFlag == true && rightHandColoredImage.NucleusLinkedList.Count == 0)
+                        {
+                            rightHandColoredImage.DrawLines(2, rightHandMotionData.GetPoints(), null, 0);
+
+                            gestureCounterFlag = false;
+                            SaveGestureToDisk(pathToSpecificGesture, 1, 2);
+
+                            gestureCounter++;
+                            rightHandMotionData.FlushData();
+                            //                    File.WriteAllText(pathToGestures + "/json", gesture.GetLastMadeGesture());
+                            /*
+                            if(PrepareToSaveImages())
+                            {
+                                while(gestureImages.Count > 0)
+                                {
+                                    gestureImages.First.Value.SaveImage();
+                                    gestureImages.RemoveFirst();
+                                }
+                            }
+                            */
+                            
+                        }
+
+                        Console.WriteLine("instant velocity magnitude before preparation: " + rightHandMotionData.GetInstantVelocityMagnitude());
+                        Console.WriteLine("hand Right y : " + ((Point3D)pointsTable["HandRight"]).GetY());
+                        Console.WriteLine("spine mid y: " + halfPointMidBase.GetY());
+                        if (((Point3D)pointsTable["HandRight"]).GetY() < halfPointMidBase.GetY() &&  !rightHandMotionData.inActiveFor30Frames() && rightHandMotionData.GetPoints().Count > 1 &&( ((Point3D)pointsTable["HandRight"]).GetZ() + 0.15 < ((Point3D)pointsTable["SpineMid"]).GetZ() || ((Point3D)pointsTable["HandRight"]).GetX()  > ((Point3D)pointsTable["SpineMid"]).GetX() + 100) && rightHandMotionData.GetInstantVelocityMagnitude() > 4) 
+                        {
+                            pathToSpecificGesture = pathToGestures + "\\" + gestureCounter;
+                            PrepareEnvironmentToSaveGesture(0);
+                        }
+                        break;
+                    case Gesture.State.Preperation:
+
+                        Console.WriteLine("Acceleration: " + rightHandMotionData.GetInstantAccelerationMagnitude());
+                  //      Console.WriteLine("Gesture Image: " + this.gestureImage);
+
+
+                        if (gesture.gestureNucleusIsReady(pointsTable, rightHandMotionData))
+                        {
+                            rightHandColoredImage.DrawLines(0, rightHandMotionData.GetPoints(), null, 0);
+                            SaveGestureToDisk(pathToSpecificGesture, 1, 0);
+
+                            Console.WriteLine("flusshhhhh");
+                            rightHandMotionData.FlushData();
+                            rightHandMotionData.AddFrame(pointsTable);
+                            gesture.SetStateToNucleus(rightHandMotionData.GetPoints().First, 0);
+
+                        }
+
+                        break;
+                    case Gesture.State.Nucleus:
+
+                        
+                        //I should begin to detect the gesture
+                        gesture.CheckGestureType(pointsTable, rightHandMotionData, pathToSpecificGesture);
+                        //detectGesture()
+                        
+                        if (gesture.gestureNucleusEnded(pointsTable, rightHandMotionData))
+                        {
+
+                            int closedShape = 0;
+                            if (gesture.MadeGesturesWithinNucleus.Contains("Rotation"))
+                            {
+                                Console.WriteLine("yes containts rotation");
+                                closedShape = 1;
+                            }
+                            if (gesture.MadeGesturesWithinNucleus.Contains("Rectangle"))
+                            {
+                                Console.WriteLine("yes containts rectangle");
+                                closedShape = 2;
+                            }
+
+
+                            rightHandColoredImage.DrawLines(1, rightHandMotionData.GetPoints(), rightHandMotionData.GetAverageRightHand(), closedShape);
+
+                            Console.WriteLine("preperation linkedlist count: " + rightHandColoredImage.PreperationLinkedList.Count);
+                            Console.WriteLine("nucleus linkedlist count: " + rightHandColoredImage.NucleusLinkedList.Count);
+                            Console.WriteLine("retraction linkedlist count: " + rightHandColoredImage.RetractionLinkedList.Count);
+
+                            gesture.SetStateToRetraction(rightHandColoredImage.NucleusLinkedList, 0);
+
+                            //         List<Hashtable> motionData = handMotionData.GetMotionData();
+                            //         Hashtable gestureType = new Hashtable();
+                            //          gestureType.Add("type", gesture.GetLastMadeGesture());
+                            //         motionData.Add(gestureType);
+
+                            SaveGestureToDisk(pathToSpecificGesture, 1, 1);
+
+
+                            //                        WritingOnDisk.WriteFile(motionData, pathToSpecificGesture + "/nucleus");
+                            rightHandMotionData.FlushData();
+
+                        }
+                        break;
+
+                    case Gesture.State.Retraction:
+                        Console.WriteLine("z instant velocity: " + rightHandMotionData.GetInstantVelocity().GetZ());
+                        Console.WriteLine("z instant velocity: " + rightHandMotionData.GetInstantVelocityMagnitude());
+                        Console.WriteLine(((Point3D)pointsTable["HandRight"]).GetZ() < ((Point3D)pointsTable["SpineMid"]).GetZ());
+                        Console.WriteLine("hand Right y : " + ((Point3D)pointsTable["HandRight"]).GetY());
+                        Console.WriteLine("spine mid y: " + halfPointMidBase.GetY());
+                        if (((Point3D)pointsTable["HandRight"]).GetY() < halfPointMidBase.GetY() &&  ((((Point3D)pointsTable["HandRight"]).GetZ() + 0.1 < ((Point3D)pointsTable["SpineMid"]).GetZ() || ((Point3D)pointsTable["HandRight"]).GetX() > ((Point3D)pointsTable["SpineMid"]).GetX() + 100) && rightHandMotionData.GetInstantVelocity().GetZ() < 0015 && rightHandMotionData.GetInstantVelocityMagnitude() > 5) )
+                        {
+                            Console.WriteLine("retraaaaaaaaction");
+                            Console.WriteLine("gesture: " + gesture.GetLastMadeGestures().Count);
+
+                            rightHandColoredImage.DrawLines(2, rightHandMotionData.GetPoints(), null, 0);
+
+                            gestureCounterFlag = false;
+                            SaveGestureToDisk(pathToSpecificGesture, 1, 2);
+
+
+                            //                  WritingOnDisk.WriteFile(handMotionData.GetMotionData(), pathToSpecificGesture + "/retraction");
+                            gestureCounter++;
+                            rightHandMotionData.FlushData();
+                            //                    File.WriteAllText(pathToGestures + "/json", gesture.GetLastMadeGesture());
+
+                            WritingOnDisk.WriteToFile(pathToGestures + "\\data.txt", gesture.GetLastMadeGesture());
+
+                            pathToSpecificGesture = pathToGestures + "\\" + gestureCounter;
+                            PrepareEnvironmentToSaveGesture(0);
+
+                        }
+                        break;
+
+                    default:
+                        break;
+                }
+
             }
 
-            if (gesturesDictionery[2] == false)
-            {
-                if (gesture.GetRotationFlag())
-                    checkForRotation(handRightX, handRightY, rightShoulderX, rightShoulderY, spineBaseY, spineMidY);
-            }
-            else
-            {
-                //checkIfRotationHasEnded();
-            }
-        }
-
-        private void checkForRotation(double handRightX, double handRightY, double rightShoulderX, double rightShoulderY, double spineBaseY, double spineMidY)
-        {
-            double radius = calculateRadius(handRightX, handRightY, rightShoulderX, rightShoulderY);
-            if(gesture.GetRotationFirstPointX() == -99)
-            {
-                gesture.SetRotationFirstPointX(handRightX);
-                gesture.SetRotationFirstPointY(handRightY);
-                gesture.SetStandardRadius(calculateRadius(handRightX, handRightY, rightShoulderX, rightShoulderY));
-
-                
-            }
-            double threshold = (spineBaseY - spineMidY) / 1.5;
             /*
-             
-            Debug.WriteLine("threshold: " + threshold);
-            Debug.WriteLine("radius: " + radius);
-            Debug.WriteLine("Standard Radius: " + gesture.GetStandardRadius());
-
-            */
-            /*
-            Debug.WriteLine("rotationFirstPointX: " + gesture.GetRotationFirstPointX());
-            Debug.WriteLine("rotationFirstPointY: " + gesture.GetRotationFirstPointY());
-            Debug.WriteLine("standardRadius: " + gesture.GetStandardRadius());
-            Debug.WriteLine("handRightX: " + handRightX);
-            Debug.WriteLine("handRightY: " + handRightY);
-            Debug.WriteLine("radius: " + radius);
-            */
-            
-
-            if (Math.Abs(radius - gesture.GetStandardRadius()) > threshold)
-            {
-                gesture.SetRotationFlag(false);
-                return;
-            }
-            
-            /*
-            Debug.WriteLine("radius: " + radius);
-            Debug.WriteLine("instant Velocity X: " + instantVelocityX);
-            Debug.WriteLine("instant Velocity Y: " + instantVelocityY);
-            Debug.WriteLine("hand X: " + handRightX);
-            Debug.WriteLine("hand Y: " + handRightY);
-            Debug.WriteLine("shoulder X: " + rightShoulderAnchor.X);
-            Debug.WriteLine("shoulder Y: " + rightShoulderAnchor.Y);
-            */
-        }
-
-        private double calculateRadius(double handRightX, double handRightY, double rightShoulderX, double rightShoulderY)
-        {
-            double xSquared = (handRightX - rightShoulderX) * (handRightX - rightShoulderX);
-            double ySquared = (handRightY - rightShoulderY) * (handRightY - rightShoulderY);
-            return Math.Sqrt(xSquared + ySquared);
-        }
-
-        private void checkForSwipeLeft(double thumbRightY, double handRightY, double spineBaseY, double spineMidY, double headY)
-        {
-            double reference = (spineBaseY - spineMidY) / 3 + spineMidY;
-            if (thumbRightY > handRightY || handRightY > reference  || handRightY < headY)
-                return;
-
-
-            if (handMotionData.GetAverageVelocityXLast10Frames() < -5 && handMotionData.GetAverageVelocityYLast10Frames() > -1.5 && handMotionData.GetAverageVelocityYLast10Frames() < 1.5)
-            {
-                gesture.AddActiveGesture(0);
-            }
-                
-
-        }
-
-        private void checkIfSwipeLeftHasEnded(double thumbRightY, double handRightY)
-        {
-            
-            if (thumbRightY > handRightY || handMotionData.GetAverageVelocityXLast10Frames() > -2 || handMotionData.GetAverageVelocityYLast10Frames() < -2 || handMotionData.GetAverageVelocityYLast10Frames() > 2)
-                gesture.KillActiveGesture(0);
-        }
-
-        private void checkForSwipeRight(double thumbRightY, double handRightY, double spineBaseY, double spineMidY, double headY)
-        {
-            
-
-            double reference = (spineBaseY - spineMidY) / 3 + spineMidY;
-
-            Debug.WriteLine("x Velocity: " + handMotionData.GetAverageVelocityXLast10Frames());
-            Debug.WriteLine("y Velocity: " + handMotionData.GetAverageVelocityYLast10Frames());
-            Debug.WriteLine("handRightY: " +handRightY);
-            Debug.WriteLine("reference: " + reference);
-            Debug.WriteLine("spine Mid: " + spineMidY);
-
-            if (thumbRightY < handRightY || handRightY > reference || handRightY < headY)
-                return;
-
-            if (handMotionData.GetAverageVelocityXLast10Frames() > 4 && handMotionData.GetAverageVelocityYLast10Frames() > -2 && handMotionData.GetAverageVelocityYLast10Frames() < 2)
-                gesture.AddActiveGesture(1);
-
-        }
-
-        private void checkIfSwipeRightHasEnded(double thumbRightY, double handRightY)
-        {
-            if (thumbRightY < handRightY || handMotionData.GetAverageVelocityXLast10Frames() < 2 || handMotionData.GetAverageVelocityYLast10Frames() < -2 || handMotionData.GetAverageVelocityYLast10Frames() > 2)
-                gesture.KillActiveGesture(1);
-        }
-
-
-
-
-        private void updateGestureState(double rightHandX, double rightHandY, double rightHandZ, double spineMidY, double spineMidZ, double rightShoulderX, double rightShoulderY)
-        {
-
-            double differenceInZ = spineMidZ - rightHandZ;
-            // Debug.WriteLine("Velocity " + velocityZ);
-            // Debug.WriteLine("lastRightHandZ " + lastRightHandZ);
-            updateInstantVelocity(rightHandX, rightHandY, rightHandZ);
-
-            if ((differenceInZ > 0.2 && handMotionData.GetInstantVelocityZ() < 0.03 && handMotionData.GetInstantVelocityZ() > -0.03) || handMotionData.GetInstantVelocityMagnitude() > 2)
+            if ((differenceInZ > 0.2 && handMotionData.GetInstantVelocity().GetZ() < 0.03 && handMotionData.GetInstantVelocity().GetZ() > -0.03) || handMotionData.GetInstantVelocityMagnitude() > 2)
             {
                 if(gesture.GetGesture() == false)
                 {
@@ -667,31 +1085,55 @@ namespace Microsoft.Samples.Kinect.BodyBasics
                 }
                 gesture.SetGesture(true);
             }
-
-            Debug.WriteLine("rightHandX: " + rightHandX);
-            Debug.WriteLine("rightShoulderX: " + rightShoulderX);
-            if (velocityMagnitude< 1.5 && velocityMagnitude > -1.5 && rightHandX < rightShoulderX + 40 && rightHandX > rightShoulderX   && rightHandY > spineMidY)
+            
+            if (handMotionData.GetInstantVelocityMagnitude() < 1.5 && handMotionData.GetInstantVelocityMagnitude() > -1.5 && ((Point3D)pointsTable["HandRight"]).GetX() < ((Point3D)pointsTable["ShoulderRight"]).GetX() + 40 && ((Point3D)pointsTable["HandRight"]).GetX() > ((Point3D)pointsTable["ShoulderRight"]).GetX() && ((Point3D)pointsTable["HandRight"]).GetY() > ((Point3D)pointsTable["SpineMid"]).GetY())
             {
                 gesture.SetGesture(false);
                 gesture.SetRotationFlag(true);
             }
-                
 
-            lastRightHandX = rightHandX;
-            lastRightHandY = rightHandY;
-            lastRightHandZ = rightHandZ;
+            */
+
+            lastRightHand.SetNewPoints(((Point3D)pointsTable["HandRight"]).GetX(), ((Point3D)pointsTable["HandRight"]).GetY(), ((Point3D)pointsTable["HandRight"]).GetZ());
         }
 
+        private Boolean PrepareToSaveImages()
+        {
+            gestureImages.AddLast(rightHandColoredImage);
+            if (gestureImages.Count >= 10)
+                return true;
+            return false;
+        }
+
+        private void PrepareEnvironmentToSaveGesture(int condition)
+        {
+            Directory.CreateDirectory(pathToGestures + "\\" + gestureCounter);
+            switch(condition)
+            {
+                case 0:
+                    this.rightHandColoredImage = gesture.SetStateToPreperation(rightHandMotionData, pathToGestures, gestureCounter);
+                    Console.WriteLine("gesture image: " + this.rightHandColoredImage);
+                    break;
+                case 1:
+                    this.leftHandColoredImage = gesture.SetStateToPreperation(leftHandMotionData, pathToGestures, gestureCounter);
+                    Console.WriteLine("gesture image: " + this.leftHandColoredImage);
+                    break;
+            }
+
+
+            
+            gestureCounterFlag = true;
+
+        }
+        /*
         private void updateInstantVelocity(double rightHandX, double rightHandY, double rightHandZ)
         {
-            if (lastRightHandZ != 0 || lastRightHandX != 0 || lastRightHandY != 0)
+            if (lastRightHand.GetX() != 0 || lastRightHand.GetY() != 0 || lastRightHand.GetZ() != 0)
             {
-                handMotionData.SetInstantVelocityX(rightHandX - lastRightHandX);
-                handMotionData.SetInstantVelocityY(rightHandY - lastRightHandY);
-                handMotionData.SetInstantVelocityZ(rightHandZ - lastRightHandZ);
+                handMotionData.SetInstantVelocity(rightHandX - lastRightHand.GetX(), rightHandY - lastRightHand.GetY(), rightHandZ - lastRightHand.GetZ());
             }
-            velocityMagnitude = Math.Sqrt( handMotionData.GetInstantVelocityX() * handMotionData.GetInstantVelocityX() + handMotionData.GetInstantVelocityY() * handMotionData.GetInstantVelocityY() + handMotionData.GetInstantVelocityZ() * handMotionData.GetInstantVelocityZ());
         }
+        */
 
         private double distanceBetweenTwoPoints(double v1, double v2, double x, double y)
         {
@@ -808,13 +1250,13 @@ namespace Microsoft.Samples.Kinect.BodyBasics
                     break;
             }
         }
-        private void drawShoulderAnchor(Point position, DrawingContext drawingContext)
+        private void DrawShoulderAnchor(Point position, DrawingContext drawingContext)
         {
             drawingContext.DrawEllipse(this.ShoulderClosedBrush, null, position, 10, 10);
         }
 
         //print On Screen
-        private void printOnScreen(Point position, DrawingContext drawingContext, String text)
+        private void PrintOnScreen(Point position, DrawingContext drawingContext, String text)
         {
             FormattedText formattedText = new FormattedText(
         text,
@@ -826,11 +1268,33 @@ namespace Microsoft.Samples.Kinect.BodyBasics
             drawingContext.DrawText(formattedText, position);
         }
 
-            /// <summary>
-            /// Draws indicators to show which edges are clipping body data
-            /// </summary>
-            /// <param name="body">body to draw clipping information for</param>
-            /// <param name="drawingContext">drawing context to draw to</param>
+        private void PrintVelocityPoints(DrawingContext drawingContext, Pen drawingPen)
+        {
+            foreach (VelocityLine velocityLine in rightHandMotionData.GetVelocityLines())
+            {
+
+                //Debug.WriteLine("Red in bytes : " + (byte)velocityLine.GetPoint1().GetRed());
+               // Debug.WriteLine("blue in bytes  : " + (byte)velocityLine.GetPoint1().GetBlue());
+                SolidColorBrush brush = new SolidColorBrush(Color.FromArgb(255, (byte)((velocityLine.GetPoint1().GetRed()+ velocityLine.GetPoint2().GetRed())/2), 0 ,  (byte)((velocityLine.GetPoint1().GetBlue() + velocityLine.GetPoint2().GetBlue())/2)));
+                Pen newPen = new Pen(brush, 6);
+                drawingContext.DrawLine(newPen, velocityLine.GetPoint1().GetPosition(), velocityLine.GetPoint2().GetPosition());
+            }
+            foreach (VelocityLine velocityLine in leftHandMotionData.GetVelocityLines())
+            {
+
+                //Debug.WriteLine("Red in bytes : " + (byte)velocityLine.GetPoint1().GetRed());
+                // Debug.WriteLine("blue in bytes  : " + (byte)velocityLine.GetPoint1().GetBlue());
+                SolidColorBrush brush = new SolidColorBrush(Color.FromArgb(255, (byte)((velocityLine.GetPoint1().GetRed() + velocityLine.GetPoint2().GetRed()) / 2), 0, (byte)((velocityLine.GetPoint1().GetBlue() + velocityLine.GetPoint2().GetBlue()) / 2)));
+                Pen newPen = new Pen(brush, 6);
+                drawingContext.DrawLine(newPen, velocityLine.GetPoint1().GetPosition(), velocityLine.GetPoint2().GetPosition());
+            }
+        }
+
+        /// <summary>
+        /// Draws indicators to show which edges are clipping body data
+        /// </summary>
+        /// <param name="body">body to draw clipping information for</param>
+        /// <param name="drawingContext">drawing context to draw to</param>
         private void DrawClippedEdges(Body body, DrawingContext drawingContext)
         {
             FrameEdges clippedEdges = body.ClippedEdges;
