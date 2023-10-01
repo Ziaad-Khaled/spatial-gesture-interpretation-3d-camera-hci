@@ -8,17 +8,17 @@ Gesture Segmentation is a project designed to track and analyze hand gestures us
 - Each body contains temporal correlation data with the kinematic skeleton.
 - The skeleton comprises 24 joints, including handRight, handLeft, spineMid, shoulderLeft, and shoulderRight.
 - Joint coordinates are provided in the depth camera 3D coordinate system.
+  
+![image](https://github.com/Ziaad-Khaled/spatial-gesture-interpretation-3d-camera-hci/assets/77291238/fad24393-211e-4e90-8259-c2b638dcccd3)
 
-![Body Skeleton Visualization](![image](https://github.com/Ziaad-Khaled/gestureDetectionUsingKinectV2/assets/77291238/0fdffaaf-d530-4f63-af7b-f9381d6c18f8)
-)
+
 
 ## Gesture States
 - The system operates in four states: No-Gesture, Preparation, Stroke, and Retraction.
 - The normal flow involves raising a hand to perform a gesture, retracting it, and waiting before the next gesture.
 - Transitions between states can be interrupted due to specific events.
 
-![Gesture States and Transitions](![image](https://github.com/Ziaad-Khaled/gestureDetectionUsingKinectV2/assets/77291238/526b8946-85f3-45a2-bd70-dd5b4bd3b458)
-)
+![image](https://github.com/Ziaad-Khaled/gestureDetectionUsingKinectV2/assets/77291238/526b8946-85f3-45a2-bd70-dd5b4bd3b458)
 
 ## Segmentation - First Phase
 - The default state is No-Gesture.
@@ -38,8 +38,8 @@ Algorithm 1 describes the transition from Preparation to Stroke based on changes
 - These images visually depict the hand motion data, including Preparation (blue lines), Stroke (green lines), and Retraction (red lines).
 - The pen size varies based on velocity magnitude.
 
-![Example Gesture Images](![image](https://github.com/Ziaad-Khaled/gestureDetectionUsingKinectV2/assets/77291238/3c51223d-0911-4de7-8eec-71d9fec7dfb3)
-)
+![image](https://github.com/Ziaad-Khaled/gestureDetectionUsingKinectV2/assets/77291238/3c51223d-0911-4de7-8eec-71d9fec7dfb3)
+
 
 ## Demo 
 
