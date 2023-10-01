@@ -1,4 +1,4 @@
-# Gesture Segmentation
+# Gesture Interpertation
 
 ## Introduction
 Gesture Segmentation is a project designed to track and analyze hand gestures using Kinect V2. This README provides an overview of the project's key components and functionality.
